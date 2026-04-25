@@ -1,0 +1,1096 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+
+// ══════════════════════════════════════════════════════════
+// CONSTANTS & DATA
+// ══════════════════════════════════════════════════════════
+const DIFFICULTY = {
+  easy:   { label:"سهل",   xp:10,  coins:5,  color:"#4ade80", emoji:"🌱", shadow:"#4ade8040" },
+  medium: { label:"متوسط", xp:25,  coins:12, color:"#facc15", emoji:"⚡", shadow:"#facc1540" },
+  hard:   { label:"صعب",   xp:50,  coins:25, color:"#f87171", emoji:"🔥", shadow:"#f8717140" },
+};
+
+const RARITY = {
+  common: { label:"شائع",  color:"#94a3b8", glow:"#94a3b830", stars:1 },
+  rare:   { label:"نادر",  color:"#818cf8", glow:"#818cf840", stars:2 },
+  epic:   { label:"ملحمي", color:"#f97316", glow:"#f9731640", stars:3 },
+  legend: { label:"أسطوري",color:"#facc15", glow:"#facc1550", stars:4 },
+};
+
+const SHOP_CATEGORIES = ["الكل","طعام","ترفيه","راحة","إنتاجية","خاص"];
+
+const DEFAULT_REWARDS = [
+  // طعام
+  { id:1, name:"قهوة مميزة",         emoji:"☕", cost:20, cat:"طعام",     rarity:"common", desc:"استمتع بكوب قهوتك المفضلة"    },
+  { id:2, name:"وجبة مفضلة",         emoji:"🍕", cost:60, cat:"طعام",     rarity:"rare",   desc:"اطلب أي وجبة تحبها"           },
+  { id:3, name:"حلوى مميزة",         emoji:"🍰", cost:35, cat:"طعام",     rarity:"common", desc:"دلّل نفسك بالحلوى"            },
+  { id:4, name:"وجبة مطعم فاخر",     emoji:"🥩", cost:150,cat:"طعام",     rarity:"epic",   desc:"عشاء في مطعم تختاره"          },
+  // ترفيه
+  { id:5, name:"مشاهدة فيلم",        emoji:"🎬", cost:80, cat:"ترفيه",    rarity:"rare",   desc:"شاهد أي فيلم تريده"           },
+  { id:6, name:"تصفح سوشيال ساعة",   emoji:"📱", cost:40, cat:"ترفيه",    rarity:"common", desc:"استمتع بوسائل التواصل"         },
+  { id:7, name:"ليلة ألعاب",         emoji:"🎮", cost:100,cat:"ترفيه",    rarity:"rare",   desc:"العب ألعابك المفضلة مساءً"    },
+  { id:8, name:"يوم نزهة",           emoji:"🌳", cost:120,cat:"ترفيه",    rarity:"epic",   desc:"اخرج للطبيعة أو حديقة"        },
+  // راحة
+  { id:9,  name:"قيلولة ٣٠ دقيقة",  emoji:"😴", cost:30, cat:"راحة",     rarity:"common", desc:"استرح ولا تفكر بأي شيء"       },
+  { id:10, name:"يوم إجازة كامل",    emoji:"🌴", cost:200,cat:"راحة",     rarity:"legend", desc:"يوم بلا مهام ولا التزامات"    },
+  { id:11, name:"حمام استرخاء",      emoji:"🛁", cost:50, cat:"راحة",     rarity:"common", desc:"استمتع بحمام دافئ ومريح"      },
+  { id:12, name:"نوم مبكر",          emoji:"🌙", cost:25, cat:"راحة",     rarity:"common", desc:"نم باكراً دون ذنب"            },
+  // إنتاجية
+  { id:13, name:"كتاب جديد",         emoji:"📚", cost:70, cat:"إنتاجية",  rarity:"rare",   desc:"اشترِ الكتاب الذي أردته"      },
+  { id:14, name:"دورة تدريبية",      emoji:"🎓", cost:180,cat:"إنتاجية",  rarity:"epic",   desc:"سجّل في دورة تعليمية"         },
+  { id:15, name:"أداة عمل جديدة",   emoji:"🛠️", cost:130,cat:"إنتاجية",  rarity:"rare",   desc:"اشترِ أداة تساعدك في عملك"   },
+];
+
+const LEVELS = [
+  { min:0,    title:"مبتدئ",    avatar:"🥚",  color:"#94a3b8" },
+  { min:100,  title:"متعلم",    avatar:"🐣",  color:"#4ade80" },
+  { min:300,  title:"محترف",    avatar:"🐥",  color:"#38bdf8" },
+  { min:600,  title:"خبير",     avatar:"🦅",  color:"#818cf8" },
+  { min:1000, title:"أسطورة",   avatar:"🦁",  color:"#f97316" },
+  { min:1500, title:"بطل",      avatar:"⚔️",  color:"#f87171" },
+  { min:2500, title:"إمبراطور", avatar:"👑",  color:"#facc15" },
+];
+
+// ── MISSIONS ──────────────────────────────────────────────
+const DAILY_MISSION_POOL = [
+  { id:"dm1", title:"أنجز ٣ مهام اليوم",           target:3,  metric:"completedToday", xp:30,  coins:15, emoji:"⚡" },
+  { id:"dm2", title:"أنجز مهمة صعبة",              target:1,  metric:"hardToday",      xp:50,  coins:25, emoji:"🔥" },
+  { id:"dm3", title:"أضف ٢ مهمة جديدة",           target:2,  metric:"addedToday",     xp:20,  coins:10, emoji:"➕" },
+  { id:"dm4", title:"لا تفوّت أي مهمة اليوم",      target:1,  metric:"noPenaltyToday", xp:40,  coins:20, emoji:"🛡️" },
+  { id:"dm5", title:"أنجز ٥ مهام اليوم",           target:5,  metric:"completedToday", xp:60,  coins:30, emoji:"💪" },
+];
+
+const WEEKLY_MISSIONS = [
+  { id:"wm1", title:"أنجز ٢٠ مهمة هذا الأسبوع",  target:20, metric:"weeklyCompleted", xp:200, coins:100, emoji:"🏆" },
+  { id:"wm2", title:"سلسلة ٧ أيام متواصلة",        target:7,  metric:"streak",          xp:150, coins:75,  emoji:"🔥" },
+  { id:"wm3", title:"أنجز ٥ مهام صعبة هذا الأسبوع",target:5, metric:"weeklyHard",      xp:180, coins:90,  emoji:"⚔️" },
+];
+
+// ── ACHIEVEMENTS ──────────────────────────────────────────
+const ALL_ACHIEVEMENTS = [
+  // مبتدئ
+  { id:"a1",  title:"الخطوة الأولى",     desc:"أنجز أول مهمة",          emoji:"👣", condition: s => s.totalCompleted >= 1,    xp:25,  rarity:"common" },
+  { id:"a2",  title:"على الطريق",        desc:"أنجز ١٠ مهام",           emoji:"🛤️",condition: s => s.totalCompleted >= 10,   xp:50,  rarity:"common" },
+  { id:"a3",  title:"منتج بامتياز",     desc:"أنجز ٥٠ مهمة",           emoji:"🏭", condition: s => s.totalCompleted >= 50,   xp:150, rarity:"rare"   },
+  { id:"a4",  title:"مئة إنجاز",        desc:"أنجز ١٠٠ مهمة",          emoji:"💯", condition: s => s.totalCompleted >= 100,  xp:300, rarity:"epic"   },
+  // سلاسل
+  { id:"a5",  title:"ثلاثة على التوالي",desc:"٣ أيام متواصلة",          emoji:"🔥", condition: s => s.streak >= 3,            xp:30,  rarity:"common" },
+  { id:"a6",  title:"أسبوع كامل",       desc:"٧ أيام متواصلة",          emoji:"📅", condition: s => s.streak >= 7,            xp:100, rarity:"rare"   },
+  { id:"a7",  title:"المحارب المستمر",  desc:"٣٠ يوماً متواصلاً",       emoji:"⚔️",condition: s => s.streak >= 30,           xp:500, rarity:"legend" },
+  // مستويات
+  { id:"a8",  title:"ترقية!",           desc:"وصل للمستوى ٢",           emoji:"⬆️",condition: s => getLevelInfo(s.xp).level >= 2, xp:40, rarity:"common" },
+  { id:"a9",  title:"خبير",            desc:"وصل للمستوى ٤",           emoji:"🦅", condition: s => getLevelInfo(s.xp).level >= 4, xp:200,rarity:"epic"   },
+  { id:"a10", title:"الإمبراطور",      desc:"وصل للمستوى ٧",           emoji:"👑", condition: s => getLevelInfo(s.xp).level >= 7, xp:500,rarity:"legend" },
+  // عملات
+  { id:"a11", title:"مدخّر",           desc:"اجمع ١٠٠ عملة",           emoji:"🪙", condition: s => s.coinsEarned >= 100,     xp:50,  rarity:"common" },
+  { id:"a12", title:"ثري!",            desc:"اجمع ٥٠٠ عملة",           emoji:"💰", condition: s => s.coinsEarned >= 500,     xp:200, rarity:"rare"   },
+  // مهام صعبة
+  { id:"a13", title:"مواجه الصعاب",    desc:"أنجز ١٠ مهام صعبة",       emoji:"💪", condition: s => s.hardCompleted >= 10,    xp:120, rarity:"rare"   },
+  { id:"a14", title:"لا يُقهر",        desc:"أنجز ٥٠ مهمة صعبة",       emoji:"🗡️",condition: s => s.hardCompleted >= 50,    xp:400, rarity:"epic"   },
+  // متجر
+  { id:"a15", title:"متسوق",           desc:"اشترِ أول مكافأة",        emoji:"🛒", condition: s => s.purchases.length >= 1,  xp:30,  rarity:"common" },
+  { id:"a16", title:"مُكافئ لنفسه",   desc:"اشترِ ١٠ مكافآت",         emoji:"🎁", condition: s => s.purchases.length >= 10, xp:150, rarity:"rare"   },
+];
+
+// ── FRIENDS (mock) ─────────────────────────────────────────
+const MOCK_FRIENDS = [
+  { id:"f1", name:"أحمد محمد",    avatar:"🦁", level:4, xp:850,  streak:5,  weeklyTasks:12, online:true  },
+  { id:"f2", name:"سارة العلي",   avatar:"🦅", level:3, xp:620,  streak:12, weeklyTasks:18, online:true  },
+  { id:"f3", name:"محمد الخالد",  avatar:"🐥", level:2, xp:280,  streak:2,  weeklyTasks:7,  online:false },
+  { id:"f4", name:"نورة السالم",  avatar:"👑", level:6, xp:2100, streak:21, weeklyTasks:25, online:false },
+];
+
+const MOCK_CHALLENGES = [
+  { id:"c1", title:"تحدي الأسبوع",     desc:"من يُنجز أكثر مهمة في ٧ أيام", participants:["أنت","أحمد","سارة"], endDate:"2026-05-02", myProgress:14, topProgress:18, emoji:"⚔️", reward:100 },
+  { id:"c2", title:"تحدي المهام الصعبة",desc:"من يُنجز أكثر مهام صعبة",      participants:["أنت","نورة"],         endDate:"2026-04-30", myProgress:3,  topProgress:5,  emoji:"🔥", reward:75  },
+];
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function getLevelInfo(xp) {
+  let lvl = 0;
+  for (let i = LEVELS.length - 1; i >= 0; i--) { if (xp >= LEVELS[i].min) { lvl = i; break; } }
+  const cur = LEVELS[lvl], nxt = LEVELS[lvl+1];
+  const xpIn = xp - cur.min, xpNeeded = nxt ? nxt.min - cur.min : 1000;
+  return { level:lvl+1, title:cur.title, avatar:cur.avatar, color:cur.color,
+           progress:Math.min((xpIn/xpNeeded)*100,100), xpLeft:nxt?nxt.min-xp:0 };
+}
+
+function getTodayMissions() {
+  const seed = new Date().getDay();
+  return [DAILY_MISSION_POOL[seed % DAILY_MISSION_POOL.length],
+          DAILY_MISSION_POOL[(seed+2) % DAILY_MISSION_POOL.length],
+          DAILY_MISSION_POOL[(seed+4) % DAILY_MISSION_POOL.length]];
+}
+
+// ══════════════════════════════════════════════════════════
+// MICRO-COMPONENTS
+// ══════════════════════════════════════════════════════════
+function RarityBadge({ rarity, size=10 }) {
+  const r = RARITY[rarity];
+  return (
+    <span style={{ fontSize:size, color:r.color, fontWeight:700,
+      background:r.glow, padding:"2px 7px", borderRadius:20,
+      border:`1px solid ${r.color}44` }}>
+      {"★".repeat(r.stars)} {r.label}
+    </span>
+  );
+}
+
+function ProgressBar({ value, max, color="#818cf8", h=8, animate=true }) {
+  const pct = Math.min((value/Math.max(max,1))*100, 100);
+  return (
+    <div style={{ height:h, background:"#ffffff12", borderRadius:99, overflow:"hidden" }}>
+      <div style={{ height:"100%", width:`${pct}%`, background:color, borderRadius:99,
+        transition: animate ? "width 0.7s cubic-bezier(0.34,1.56,0.64,1)" : "none",
+        boxShadow:`0 0 8px ${color}66` }} />
+    </div>
+  );
+}
+
+function Confetti({ onDone }) {
+  const pieces = Array.from({length:20},(_,i)=>({
+    id:i, x:Math.random()*100, delay:Math.random()*0.3,
+    color:["#818cf8","#facc15","#f87171","#4ade80","#38bdf8","#f97316"][i%6],
+    size:6+Math.random()*8, angle:Math.random()*360,
+  }));
+  useEffect(()=>{ const t=setTimeout(onDone,1200); return()=>clearTimeout(t); },[onDone]);
+  return (
+    <div style={{ position:"fixed",inset:0,pointerEvents:"none",zIndex:9999,overflow:"hidden" }}>
+      {pieces.map(p=>(
+        <div key={p.id} style={{
+          position:"absolute", left:`${p.x}%`, top:"-10px",
+          width:p.size, height:p.size, background:p.color,
+          borderRadius:p.id%3===0?"50%":2,
+          animation:`confettiFall 1s ease-in ${p.delay}s forwards`,
+          transform:`rotate(${p.angle}deg)`,
+        }}/>
+      ))}
+    </div>
+  );
+}
+
+function Toast({ toasts, remove }) {
+  const colors = { xp:"#818cf8",coins:"#facc15",level:"#f97316",achievement:"#4ade80",purchase:"#38bdf8",warn:"#f87171" };
+  return (
+    <div style={{ position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:10000,display:"flex",flexDirection:"column",gap:8,alignItems:"center" }}>
+      {toasts.map(t=>(
+        <div key={t.id} style={{
+          background:colors[t.type]||"#818cf8", color:"#0a0a1a",
+          padding:"9px 20px", borderRadius:50, fontWeight:800, fontSize:14,
+          animation:"toastIn 0.3s ease", boxShadow:`0 4px 24px ${colors[t.type]||"#818cf8"}66`,
+          whiteSpace:"nowrap", fontFamily:"inherit",
+        }}>{t.msg}</div>
+      ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// INITIAL STATE
+// ══════════════════════════════════════════════════════════
+const INIT = {
+  tasks:[], xp:0, coins:0, streak:3,
+  completedToday:0, hardToday:0, addedToday:0,
+  weeklyCompleted:0, weeklyHard:0,
+  totalCompleted:0, hardCompleted:0, coinsEarned:0,
+  purchases:[], rewards:[...DEFAULT_REWARDS],
+  unlockedAchievements:[], missionsCompleted:[],
+  lastActive: new Date().toDateString(),
+  penaltyMode:true,
+};
+
+// ══════════════════════════════════════════════════════════
+// MAIN APP
+// ══════════════════════════════════════════════════════════
+export default function TaskQuestV2() {
+  const [s, setS] = useState(INIT);
+  const [view, setView] = useState("tasks");
+  const [dark, setDark] = useState(true);
+  const [toasts, setToasts] = useState([]);
+  const [confetti, setConfetti] = useState(false);
+  const [newTask, setNewTask] = useState({ title:"", difficulty:"medium", type:"daily" });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [shopCat, setShopCat] = useState("الكل");
+  const [showCustomReward, setShowCustomReward] = useState(false);
+  const [customReward, setCustomReward] = useState({ name:"", emoji:"🎁", cost:50, cat:"خاص", rarity:"common", desc:"" });
+  const [achievTab, setAchievTab] = useState("earned");
+  const [expandedChallenge, setExpandedChallenge] = useState(null);
+  const toastId = useRef(0);
+
+  const addToast = useCallback((msg, type="xp") => {
+    const id = ++toastId.current;
+    setToasts(t=>[...t.slice(-2),{id,msg,type}]);
+    setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)), 2500);
+  },[]);
+
+  // Check achievements after every state change
+  const checkAchievements = useCallback((ns) => {
+    const newUnlocked = ALL_ACHIEVEMENTS.filter(a =>
+      !ns.unlockedAchievements.includes(a.id) && a.condition(ns)
+    );
+    if (newUnlocked.length > 0) {
+      setTimeout(()=>{
+        newUnlocked.forEach((a,i) => setTimeout(()=>{
+          addToast(`🏅 إنجاز جديد: ${a.title}`, "achievement");
+          setConfetti(true);
+        }, i*800));
+      }, 300);
+      return {
+        ...ns,
+        unlockedAchievements:[...ns.unlockedAchievements, ...newUnlocked.map(a=>a.id)],
+        xp: ns.xp + newUnlocked.reduce((sum,a)=>sum+a.xp,0),
+      };
+    }
+    return ns;
+  },[addToast]);
+
+  // Check missions
+  const checkMissions = useCallback((ns) => {
+    const todayMissions = getTodayMissions();
+    const weeklyMissions = WEEKLY_MISSIONS;
+    let bonusXp = 0, bonusCoins = 0, newCompleted = [...ns.missionsCompleted];
+    [...todayMissions, ...weeklyMissions].forEach(m => {
+      if (newCompleted.includes(m.id)) return;
+      const val = ns[m.metric] ?? 0;
+      if (val >= m.target) {
+        newCompleted.push(m.id);
+        bonusXp += m.xp; bonusCoins += m.coins;
+        setTimeout(()=>addToast(`✨ مهمة مكتملة: ${m.title}`, "coins"), 500);
+      }
+    });
+    if (bonusXp > 0 || bonusCoins > 0) {
+      return { ...ns, xp:ns.xp+bonusXp, coins:ns.coins+bonusCoins, coinsEarned:ns.coinsEarned+bonusCoins, missionsCompleted:newCompleted };
+    }
+    return { ...ns, missionsCompleted:newCompleted };
+  },[addToast]);
+
+  const completeTask = (taskId, e) => {
+    const task = s.tasks.find(t=>t.id===taskId);
+    if (!task || task.done) return;
+    const d = DIFFICULTY[task.difficulty];
+    setConfetti(true);
+    setS(prev => {
+      const isHard = task.difficulty==="hard";
+      let ns = {
+        ...prev,
+        xp: prev.xp + d.xp,
+        coins: prev.coins + d.coins,
+        coinsEarned: prev.coinsEarned + d.coins,
+        completedToday: prev.completedToday + 1,
+        weeklyCompleted: prev.weeklyCompleted + 1,
+        totalCompleted: prev.totalCompleted + 1,
+        hardToday: prev.hardToday + (isHard?1:0),
+        weeklyHard: prev.weeklyHard + (isHard?1:0),
+        hardCompleted: prev.hardCompleted + (isHard?1:0),
+        tasks: prev.tasks.map(t=>t.id===taskId?{...t,done:true}:t),
+      };
+      const oldLvl = getLevelInfo(prev.xp).level;
+      const newLvl = getLevelInfo(ns.xp).level;
+      if (newLvl > oldLvl) setTimeout(()=>addToast(`🎉 ترقية! المستوى ${newLvl} 🎊`,"level"),400);
+      ns = checkMissions(ns);
+      ns = checkAchievements(ns);
+      return ns;
+    });
+    addToast(`+${d.xp} XP  +${d.coins} 🪙`, "xp");
+  };
+
+  const deleteTask = (taskId) => {
+    const task = s.tasks.find(t=>t.id===taskId);
+    if (!task) return;
+    if (s.penaltyMode && !task.done) {
+      const penalty = Math.floor(DIFFICULTY[task.difficulty].xp / 2);
+      setS(prev=>({...prev, xp:Math.max(0,prev.xp-penalty), tasks:prev.tasks.filter(t=>t.id!==taskId)}));
+      addToast(`-${penalty} XP (عقوبة)`, "warn");
+    } else {
+      setS(prev=>({...prev, tasks:prev.tasks.filter(t=>t.id!==taskId)}));
+    }
+  };
+
+  const addTask = () => {
+    if (!newTask.title.trim()) return;
+    const task = { id:Date.now(), ...newTask, done:false, createdAt:new Date().toISOString() };
+    setS(prev=>{
+      const ns = { ...prev, tasks:[task,...prev.tasks], addedToday:prev.addedToday+1 };
+      return checkMissions(ns);
+    });
+    setNewTask({title:"",difficulty:"medium",type:"daily"});
+    setShowAddForm(false);
+    addToast("✅ تمت إضافة المهمة","coins");
+  };
+
+  const buyReward = (item) => {
+    if (s.coins < item.cost) { addToast("🪙 رصيدك غير كافٍ!","warn"); return; }
+    setS(prev=>{
+      const ns = { ...prev, coins:prev.coins-item.cost, purchases:[{...item,boughtAt:new Date().toISOString()},...prev.purchases] };
+      return checkAchievements(ns);
+    });
+    addToast(`🎁 تم شراء: ${item.name}`,"purchase");
+  };
+
+  const addCustomReward = () => {
+    if (!customReward.name.trim()) return;
+    const r = { ...customReward, id:Date.now(), custom:true };
+    setS(prev=>({...prev, rewards:[...prev.rewards,r]}));
+    setCustomReward({name:"",emoji:"🎁",cost:50,cat:"خاص",rarity:"common",desc:""});
+    setShowCustomReward(false);
+    addToast("✨ تمت إضافة المكافأة","coins");
+  };
+
+  const li = getLevelInfo(s.xp);
+  const todayMissions = getTodayMissions();
+  const bg    = dark?"#080812":"#f0f4ff";
+  const card  = dark?"#12121f":"#ffffff";
+  const card2 = dark?"#1a1a2e":"#f8faff";
+  const border= dark?"#252540":"#dde4ff";
+  const text  = dark?"#e8e8ff":"#1a1a3a";
+  const sub   = dark?"#7070aa":"#6666aa";
+  const accent= "#818cf8";
+
+  // ── SHOP FILTERED ──
+  const filteredRewards = s.rewards.filter(r => shopCat==="الكل" || r.cat===shopCat);
+  const earned = ALL_ACHIEVEMENTS.filter(a=>s.unlockedAchievements.includes(a.id));
+  const notEarned = ALL_ACHIEVEMENTS.filter(a=>!s.unlockedAchievements.includes(a.id));
+  const pendingTasks = s.tasks.filter(t=>!t.done);
+  const doneTasks = s.tasks.filter(t=>t.done);
+
+  // Leaderboard (mock + user)
+  const leaderboard = [
+    { name:"نورة السالم", avatar:"👑", weeklyXp:1250, rank:1 },
+    { name:"سارة العلي",  avatar:"🦅", weeklyXp:870,  rank:2 },
+    { name:"أنت",         avatar:li.avatar, weeklyXp:s.weeklyCompleted*25, rank:3, isMe:true },
+    { name:"أحمد محمد",  avatar:"🦁", weeklyXp:610,  rank:4 },
+    { name:"محمد الخالد",avatar:"🐥", weeklyXp:420,  rank:5 },
+  ].sort((a,b)=>b.weeklyXp-a.weeklyXp).map((x,i)=>({...x,rank:i+1}));
+
+  return (
+    <div dir="rtl" style={{ minHeight:"100vh", background:bg, color:text,
+      fontFamily:"'Cairo','Tajawal',sans-serif", maxWidth:480, margin:"0 auto",
+      position:"relative", overflow:"hidden" }}>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:3px}
+        ::-webkit-scrollbar-thumb{background:#333366;border-radius:4px}
+        @keyframes confettiFall{0%{opacity:1;transform:translateY(0) rotate(0deg)}100%{opacity:0;transform:translateY(100vh) rotate(720deg)}}
+        @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-16px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+        @keyframes glow{0%,100%{box-shadow:0 0 0px #818cf8}50%{box-shadow:0 0 20px #818cf866}}
+        @keyframes shimmer{0%{background-position:200%}100%{background-position:-200%}}
+        .fade-up{animation:fadeUp 0.3s ease}
+        .pulse-on-hover:hover{animation:pulse 0.4s ease}
+        .hover-lift{transition:transform 0.15s,box-shadow 0.15s}
+        .hover-lift:hover{transform:translateY(-2px);box-shadow:0 8px 24px #00000030}
+        input:focus{outline:none!important}
+        textarea:focus{outline:none!important}
+        button{font-family:'Cairo','Tajawal',sans-serif!important}
+      `}</style>
+
+      {confetti && <Confetti onDone={()=>setConfetti(false)}/>}
+      <Toast toasts={toasts} remove={()=>{}}/>
+
+      {/* ────── HEADER ────── */}
+      <div style={{
+        background: dark?"linear-gradient(160deg,#14142b 0%,#0e0e1f 100%)":"linear-gradient(160deg,#dde4ff 0%,#f0f4ff 100%)",
+        padding:"18px 18px 14px", borderBottom:`1px solid ${border}`,
+        position:"sticky",top:0,zIndex:100,
+      }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:900,color:accent,letterSpacing:"-0.5px"}}>⚔️ مهمّاتي</div>
+            <div style={{fontSize:11,color:sub,marginTop:1}}>المستوى {li.level} · {li.title} {li.avatar}</div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            <div style={{textAlign:"center",background:dark?"#1e1e38":"#dde4ff",borderRadius:10,padding:"5px 10px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#facc15"}}>🪙 {s.coins}</div>
+            </div>
+            <div style={{textAlign:"center",background:dark?"#1e1e38":"#dde4ff",borderRadius:10,padding:"5px 10px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#f87171"}}>🔥 {s.streak}</div>
+            </div>
+            <button onClick={()=>setDark(d=>!d)} style={{
+              background:"none",border:`1px solid ${border}`,borderRadius:8,
+              padding:"5px 7px",color:text,cursor:"pointer",fontSize:13,
+              transition:"all 0.2s"
+            }}>{dark?"☀️":"🌙"}</button>
+          </div>
+        </div>
+        {/* XP BAR */}
+        <div style={{marginTop:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:sub,marginBottom:4}}>
+            <span>{s.xp} XP</span><span>{li.xpLeft>0?`${li.xpLeft} للمستوى التالي`:"MAX!"}</span>
+          </div>
+          <ProgressBar value={li.progress} max={100} color={li.color} h={7}/>
+        </div>
+      </div>
+
+      {/* ────── BODY ────── */}
+      <div style={{padding:"0 14px 96px",overflowY:"auto",height:"calc(100vh - 156px)"}}>
+
+        {/* ════════ TASKS ════════ */}
+        {view==="tasks" && (
+          <div className="fade-up">
+            {/* Quick stats */}
+            <div style={{display:"flex",gap:8,margin:"14px 0"}}>
+              {[
+                {label:"اليوم",value:s.completedToday,icon:"✅",c:"#4ade80"},
+                {label:"الأسبوع",value:s.weeklyCompleted,icon:"📆",c:"#818cf8"},
+                {label:"معلّقة",value:pendingTasks.length,icon:"⏳",c:"#facc15"},
+              ].map(x=>(
+                <div key={x.label} style={{flex:1,background:card,border:`1px solid ${border}`,borderRadius:14,padding:"11px 6px",textAlign:"center"}}>
+                  <div style={{fontSize:18}}>{x.icon}</div>
+                  <div style={{fontSize:17,fontWeight:900,color:x.c}}>{x.value}</div>
+                  <div style={{fontSize:10,color:sub}}>{x.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Daily missions strip */}
+            <div style={{background:`linear-gradient(135deg,${accent}18,#c084fc18)`,border:`1px solid ${accent}30`,borderRadius:16,padding:14,marginBottom:14}}>
+              <div style={{fontSize:13,fontWeight:700,color:accent,marginBottom:10}}>✨ مهام اليوم</div>
+              {todayMissions.map(m=>{
+                const done = s.missionsCompleted.includes(m.id);
+                const val = s[m.metric]??0;
+                return (
+                  <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,opacity:done?0.6:1}}>
+                    <span style={{fontSize:18}}>{done?"✅":m.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:700,textDecoration:done?"line-through":"none",color:done?sub:text}}>{m.title}</div>
+                      <div style={{marginTop:3}}><ProgressBar value={val} max={m.target} color={done?"#4ade80":accent} h={4}/></div>
+                    </div>
+                    <div style={{fontSize:10,color:sub,textAlign:"right"}}>
+                      <div style={{color:"#818cf8"}}>+{m.xp}XP</div>
+                      <div style={{color:"#facc15"}}>+{m.coins}🪙</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add task button */}
+            <button onClick={()=>setShowAddForm(f=>!f)} className="hover-lift" style={{
+              width:"100%",padding:"13px",borderRadius:16,cursor:"pointer",
+              background:showAddForm?(dark?"#1e1e38":"#dde4ff"):"linear-gradient(135deg,#818cf8,#c084fc)",
+              border:"none",color:showAddForm?text:"#fff",
+              fontSize:14,fontWeight:700,
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+              boxShadow:showAddForm?"none":"0 4px 20px #818cf840",
+              transition:"all 0.3s",
+            }}>
+              <span style={{fontSize:20,transition:"transform 0.3s",transform:showAddForm?"rotate(45deg)":"rotate(0)"}}>+</span>
+              {showAddForm?"إلغاء":"إضافة مهمة جديدة"}
+            </button>
+
+            {showAddForm && (
+              <div className="fade-up" style={{background:card,border:`1px solid ${border}`,borderRadius:16,padding:16,marginTop:10}}>
+                <input value={newTask.title} onChange={e=>setNewTask(n=>({...n,title:e.target.value}))}
+                  onKeyDown={e=>e.key==="Enter"&&addTask()} placeholder="اكتب اسم المهمة..."
+                  style={{width:"100%",padding:"12px 14px",borderRadius:12,background:card2,
+                    border:`1px solid ${border}`,color:text,fontFamily:"inherit",fontSize:14,
+                    marginBottom:12,textAlign:"right",transition:"border 0.2s"}}/>
+                <div style={{display:"flex",gap:8,marginBottom:12}}>
+                  {Object.entries(DIFFICULTY).map(([k,d])=>(
+                    <button key={k} onClick={()=>setNewTask(n=>({...n,difficulty:k}))} style={{
+                      flex:1,padding:"8px 4px",borderRadius:10,cursor:"pointer",
+                      background:newTask.difficulty===k?d.color+"33":"transparent",
+                      border:`2px solid ${newTask.difficulty===k?d.color:border}`,
+                      color:newTask.difficulty===k?d.color:sub,
+                      fontSize:12,fontWeight:700,transition:"all 0.2s",
+                    }}>{d.emoji} {d.label}</button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8,marginBottom:14}}>
+                  {["daily","weekly"].map(t=>(
+                    <button key={t} onClick={()=>setNewTask(n=>({...n,type:t}))} style={{
+                      flex:1,padding:"8px",borderRadius:10,cursor:"pointer",
+                      background:newTask.type===t?accent+"22":"transparent",
+                      border:`2px solid ${newTask.type===t?accent:border}`,
+                      color:newTask.type===t?accent:sub,
+                      fontSize:12,fontWeight:700,transition:"all 0.2s",
+                    }}>{t==="daily"?"📅 يومية":"📆 أسبوعية"}</button>
+                  ))}
+                </div>
+                {/* Penalty toggle */}
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,padding:"8px 10px",background:card2,borderRadius:10}}>
+                  <span style={{fontSize:11,color:sub}}>⚠️ نظام العقوبات</span>
+                  <div onClick={()=>setS(p=>({...p,penaltyMode:!p.penaltyMode}))} style={{
+                    width:38,height:22,borderRadius:99,cursor:"pointer",flexShrink:0,
+                    background:s.penaltyMode?"#f87171":(dark?"#2a2a4a":"#dde4ff"),
+                    position:"relative",transition:"background 0.3s",
+                  }}>
+                    <div style={{position:"absolute",top:3,left:s.penaltyMode?19:3,width:16,height:16,
+                      borderRadius:"50%",background:"#fff",transition:"left 0.3s"}}/>
+                  </div>
+                </div>
+                <button onClick={addTask} style={{
+                  width:"100%",padding:12,borderRadius:12,cursor:"pointer",
+                  background:"linear-gradient(135deg,#818cf8,#c084fc)",border:"none",
+                  color:"#fff",fontSize:14,fontWeight:700,
+                  boxShadow:"0 4px 16px #818cf840",transition:"transform 0.2s",
+                }}>✅ إضافة المهمة</button>
+              </div>
+            )}
+
+            {/* Pending tasks */}
+            {pendingTasks.length>0 && (
+              <div style={{marginTop:16}}>
+                <div style={{fontSize:12,fontWeight:700,color:sub,marginBottom:8}}>⏳ المعلّقة ({pendingTasks.length})</div>
+                {pendingTasks.map(task=>{
+                  const d = DIFFICULTY[task.difficulty];
+                  return (
+                    <div key={task.id} className="hover-lift fade-up" style={{
+                      background:card,border:`1px solid ${border}`,borderRadius:16,
+                      padding:"13px 13px",marginBottom:9,
+                      borderRight:`4px solid ${d.color}`,
+                      boxShadow:`inset 0 0 0 0 ${d.shadow}`,
+                    }}>
+                      <div style={{display:"flex",alignItems:"center",gap:11}}>
+                        <button onClick={e=>completeTask(task.id,e)} style={{
+                          width:33,height:33,borderRadius:"50%",flexShrink:0,
+                          background:"transparent",border:`2px solid ${d.color}`,
+                          cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                          fontSize:15,transition:"all 0.2s",color:d.color,
+                        }} onMouseEnter={e=>e.currentTarget.style.background=d.color+"33"}
+                           onMouseLeave={e=>e.currentTarget.style.background="transparent"}>○</button>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:14,fontWeight:700}}>{task.title}</div>
+                          <div style={{fontSize:11,color:sub,marginTop:3,display:"flex",gap:8,flexWrap:"wrap"}}>
+                            <span style={{color:d.color}}>{d.emoji} {d.label}</span>
+                            <span>+{d.xp} XP</span>
+                            <span>+{d.coins} 🪙</span>
+                            <span>{task.type==="daily"?"📅":"📆"}</span>
+                          </div>
+                        </div>
+                        <button onClick={()=>deleteTask(task.id)} style={{
+                          background:"none",border:"none",color:sub,cursor:"pointer",
+                          fontSize:15,padding:4,transition:"color 0.2s",
+                        }} onMouseEnter={e=>e.target.style.color="#f87171"}
+                           onMouseLeave={e=>e.target.style.color=sub}>✕</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Done tasks */}
+            {doneTasks.length>0 && (
+              <div style={{marginTop:16}}>
+                <div style={{fontSize:12,fontWeight:700,color:sub,marginBottom:8}}>✅ المنجزة ({doneTasks.length})</div>
+                {doneTasks.map(task=>{
+                  const d = DIFFICULTY[task.difficulty];
+                  return (
+                    <div key={task.id} style={{
+                      background:dark?"#0e0e1a":card2,border:`1px solid ${border}`,
+                      borderRadius:14,padding:"11px 13px",marginBottom:7,opacity:0.55,
+                      borderRight:`4px solid ${d.color}44`,
+                    }}>
+                      <div style={{display:"flex",alignItems:"center",gap:11}}>
+                        <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,
+                          background:d.color+"22",border:`2px solid ${d.color}`,
+                          display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:d.color}}>✓</div>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,textDecoration:"line-through",color:sub}}>{task.title}</div>
+                          <div style={{fontSize:10,color:sub,marginTop:2}}>{d.emoji} {d.label} · +{d.xp} XP</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {s.tasks.length===0 && (
+              <div style={{textAlign:"center",padding:"50px 20px",color:sub}}>
+                <div style={{fontSize:56,marginBottom:14}}>⚔️</div>
+                <div style={{fontSize:15,fontWeight:700}}>لا توجد مهام بعد</div>
+                <div style={{fontSize:12,marginTop:5}}>أضف مهمتك الأولى وابدأ رحلتك!</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════════ MISSIONS ════════ */}
+        {view==="missions" && (
+          <div className="fade-up">
+            <div style={{textAlign:"center",padding:"16px 0 12px"}}>
+              <div style={{fontSize:28}}>✨</div>
+              <div style={{fontSize:18,fontWeight:900}}>المهام والأهداف</div>
+            </div>
+
+            {/* Daily */}
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:800,color:accent,marginBottom:10}}>📅 مهام اليوم</div>
+              {todayMissions.map(m=>{
+                const done = s.missionsCompleted.includes(m.id);
+                const val = s[m.metric]??0;
+                const pct = Math.min((val/m.target)*100,100);
+                return (
+                  <div key={m.id} className="hover-lift" style={{
+                    background:done?`linear-gradient(135deg,#4ade8012,#4ade8022)`:card,
+                    border:`1px solid ${done?"#4ade8040":border}`,
+                    borderRadius:16,padding:16,marginBottom:10,
+                  }}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                      <div style={{fontSize:28}}>{done?"✅":m.emoji}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:14,fontWeight:700,textDecoration:done?"line-through":"none",color:done?sub:text}}>{m.title}</div>
+                        <div style={{fontSize:11,color:sub,marginTop:3}}>
+                          التقدم: {Math.min(val,m.target)}/{m.target}
+                        </div>
+                        <div style={{marginTop:8}}><ProgressBar value={val} max={m.target} color={done?"#4ade80":accent} h={6}/></div>
+                      </div>
+                      <div style={{textAlign:"left",flexShrink:0}}>
+                        <div style={{fontSize:11,color:accent,fontWeight:700}}>+{m.xp} XP</div>
+                        <div style={{fontSize:11,color:"#facc15",fontWeight:700}}>+{m.coins} 🪙</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Weekly */}
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:800,color:"#f97316",marginBottom:10}}>🏆 أهداف الأسبوع</div>
+              {WEEKLY_MISSIONS.map(m=>{
+                const done = s.missionsCompleted.includes(m.id);
+                const val = s[m.metric]??0;
+                return (
+                  <div key={m.id} className="hover-lift" style={{
+                    background:done?`linear-gradient(135deg,#f9731612,#f9731622)`:card,
+                    border:`1px solid ${done?"#f9731640":border}`,
+                    borderRadius:16,padding:16,marginBottom:10,
+                  }}>
+                    <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                      <div style={{fontSize:28}}>{done?"🏆":m.emoji}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:14,fontWeight:700,textDecoration:done?"line-through":"none"}}>{m.title}</div>
+                        <div style={{fontSize:11,color:sub,marginTop:3}}>التقدم: {Math.min(val,m.target)}/{m.target}</div>
+                        <div style={{marginTop:8}}><ProgressBar value={val} max={m.target} color={done?"#f97316":"#f9731680"} h={6}/></div>
+                      </div>
+                      <div style={{textAlign:"left",flexShrink:0}}>
+                        <div style={{fontSize:12,color:accent,fontWeight:700}}>+{m.xp} XP</div>
+                        <div style={{fontSize:12,color:"#facc15",fontWeight:700}}>+{m.coins} 🪙</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bonus banner */}
+            <div style={{
+              background:"linear-gradient(135deg,#facc1520,#f9731520)",
+              border:"1px solid #facc1540",borderRadius:16,padding:16,textAlign:"center",
+            }}>
+              <div style={{fontSize:24,marginBottom:6}}>🎯</div>
+              <div style={{fontSize:14,fontWeight:800}}>أنجز كل مهام اليوم</div>
+              <div style={{fontSize:12,color:sub,marginTop:4}}>واحصل على مكافأة إضافية <span style={{color:"#facc15",fontWeight:700}}>+50 XP +25 🪙</span></div>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ SHOP ════════ */}
+        {view==="shop" && (
+          <div className="fade-up">
+            <div style={{textAlign:"center",padding:"16px 0 10px"}}>
+              <div style={{fontSize:28}}>🏪</div>
+              <div style={{fontSize:18,fontWeight:900}}>متجر المكافآت</div>
+              <div style={{fontSize:14,color:"#facc15",fontWeight:700,marginTop:4}}>رصيدك: {s.coins} 🪙</div>
+            </div>
+
+            {/* Categories */}
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:14}}>
+              {SHOP_CATEGORIES.map(cat=>(
+                <button key={cat} onClick={()=>setShopCat(cat)} style={{
+                  flexShrink:0,padding:"6px 14px",borderRadius:99,cursor:"pointer",
+                  background:shopCat===cat?"linear-gradient(135deg,#818cf8,#c084fc)":(dark?"#1a1a2e":"#dde4ff"),
+                  border:"none",color:shopCat===cat?"#fff":sub,
+                  fontSize:12,fontWeight:700,transition:"all 0.2s",
+                  boxShadow:shopCat===cat?"0 4px 12px #818cf840":"none",
+                }}>{cat}</button>
+              ))}
+            </div>
+
+            {/* Add custom reward */}
+            <button onClick={()=>setShowCustomReward(c=>!c)} style={{
+              width:"100%",padding:"11px",borderRadius:14,cursor:"pointer",marginBottom:12,
+              background:showCustomReward?(dark?"#1e1e38":"#dde4ff"):"transparent",
+              border:`2px dashed ${border}`,color:sub,fontSize:13,fontWeight:700,transition:"all 0.2s",
+            }}>✏️ {showCustomReward?"إلغاء":"أضف مكافأة مخصصة"}</button>
+
+            {showCustomReward && (
+              <div className="fade-up" style={{background:card,border:`1px solid ${border}`,borderRadius:16,padding:16,marginBottom:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:10,marginBottom:10}}>
+                  <input value={customReward.emoji} onChange={e=>setCustomReward(c=>({...c,emoji:e.target.value}))}
+                    style={{padding:"10px",borderRadius:10,background:card2,border:`1px solid ${border}`,
+                      color:text,fontFamily:"inherit",fontSize:24,textAlign:"center"}}/>
+                  <input value={customReward.name} onChange={e=>setCustomReward(c=>({...c,name:e.target.value}))}
+                    placeholder="اسم المكافأة..."
+                    style={{padding:"10px 12px",borderRadius:10,background:card2,border:`1px solid ${border}`,
+                      color:text,fontFamily:"inherit",fontSize:13,textAlign:"right"}}/>
+                </div>
+                <input value={customReward.desc} onChange={e=>setCustomReward(c=>({...c,desc:e.target.value}))}
+                  placeholder="وصف المكافأة..."
+                  style={{width:"100%",padding:"10px 12px",borderRadius:10,background:card2,border:`1px solid ${border}`,
+                    color:text,fontFamily:"inherit",fontSize:12,textAlign:"right",marginBottom:10}}/>
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,color:sub,marginBottom:4}}>التكلفة 🪙</div>
+                    <input type="number" value={customReward.cost} onChange={e=>setCustomReward(c=>({...c,cost:+e.target.value}))}
+                      style={{width:"100%",padding:"8px 10px",borderRadius:10,background:card2,border:`1px solid ${border}`,
+                        color:text,fontFamily:"inherit",fontSize:13,textAlign:"center"}}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:11,color:sub,marginBottom:4}}>الندرة</div>
+                    <select value={customReward.rarity} onChange={e=>setCustomReward(c=>({...c,rarity:e.target.value}))} style={{
+                      width:"100%",padding:"8px 10px",borderRadius:10,background:card2,border:`1px solid ${border}`,
+                      color:text,fontFamily:"inherit",fontSize:12,
+                    }}>
+                      {Object.entries(RARITY).map(([k,r])=>(
+                        <option key={k} value={k}>{r.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <button onClick={addCustomReward} style={{
+                  width:"100%",padding:11,borderRadius:12,cursor:"pointer",
+                  background:"linear-gradient(135deg,#818cf8,#c084fc)",border:"none",
+                  color:"#fff",fontSize:13,fontWeight:700,
+                }}>✅ إضافة مكافأة</button>
+              </div>
+            )}
+
+            {/* Reward cards */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {filteredRewards.map(item=>{
+                const r = RARITY[item.rarity];
+                const canBuy = s.coins >= item.cost;
+                return (
+                  <div key={item.id} className="hover-lift" style={{
+                    background:card,border:`1px solid ${canBuy?r.color+"40":border}`,
+                    borderRadius:16,padding:14,textAlign:"center",
+                    boxShadow:canBuy?`0 4px 16px ${r.glow}`:"none",
+                    transition:"all 0.3s",
+                  }}>
+                    <div style={{fontSize:32,marginBottom:6}}>{item.emoji}</div>
+                    <div style={{fontSize:12,fontWeight:800,lineHeight:1.3,marginBottom:4}}>{item.name}</div>
+                    <div style={{fontSize:10,color:sub,marginBottom:6,minHeight:28}}>{item.desc}</div>
+                    <div style={{marginBottom:8}}><RarityBadge rarity={item.rarity} size={9}/></div>
+                    <button onClick={()=>buyReward(item)} style={{
+                      width:"100%",padding:"7px 0",borderRadius:10,cursor:"pointer",
+                      background:canBuy?`linear-gradient(135deg,${r.color},${r.color}bb)`:(dark?"#1e1e38":"#dde4ff"),
+                      border:"none",color:canBuy?"#000":sub,
+                      fontSize:12,fontWeight:700,
+                      boxShadow:canBuy?`0 4px 12px ${r.glow}`:"none",
+                      transition:"all 0.2s",
+                    }}>{item.cost} 🪙{canBuy?"":" (غير كافٍ)"}</button>
+                    {item.custom && <div style={{fontSize:9,color:sub,marginTop:4}}>✏️ مخصص</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Recent purchases */}
+            {s.purchases.length>0 && (
+              <div style={{marginTop:22}}>
+                <div style={{fontSize:13,fontWeight:700,color:sub,marginBottom:10}}>🎁 آخر مشترياتك</div>
+                {s.purchases.slice(0,4).map((p,i)=>(
+                  <div key={i} style={{background:card,border:`1px solid ${border}`,borderRadius:12,
+                    padding:"10px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:22}}>{p.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:12,fontWeight:700}}>{p.name}</div>
+                      <div style={{fontSize:10,color:sub}}>{p.cost} 🪙 · <RarityBadge rarity={p.rarity} size={9}/></div>
+                    </div>
+                    <span style={{fontSize:10,color:"#4ade80"}}>✓</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ════════ ACHIEVEMENTS ════════ */}
+        {view==="achievements" && (
+          <div className="fade-up">
+            <div style={{textAlign:"center",padding:"16px 0 12px"}}>
+              <div style={{fontSize:28}}>🏅</div>
+              <div style={{fontSize:18,fontWeight:900}}>الإنجازات</div>
+              <div style={{fontSize:12,color:sub,marginTop:4}}>{earned.length} / {ALL_ACHIEVEMENTS.length} محقق</div>
+            </div>
+
+            {/* Progress */}
+            <div style={{marginBottom:16}}>
+              <ProgressBar value={earned.length} max={ALL_ACHIEVEMENTS.length} color="#facc15" h={10}/>
+            </div>
+
+            {/* Tabs */}
+            <div style={{display:"flex",gap:8,marginBottom:14}}>
+              {[["earned","🏅 المحققة"],["locked","🔒 المقفلة"]].map(([k,l])=>(
+                <button key={k} onClick={()=>setAchievTab(k)} style={{
+                  flex:1,padding:"9px",borderRadius:12,cursor:"pointer",
+                  background:achievTab===k?"linear-gradient(135deg,#818cf8,#c084fc)":(dark?"#1a1a2e":"#dde4ff"),
+                  border:"none",color:achievTab===k?"#fff":sub,
+                  fontSize:12,fontWeight:700,transition:"all 0.2s",
+                }}>{l} ({k==="earned"?earned.length:notEarned.length})</button>
+              ))}
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {(achievTab==="earned"?earned:notEarned).map(a=>{
+                const r = RARITY[a.rarity];
+                const isEarned = s.unlockedAchievements.includes(a.id);
+                return (
+                  <div key={a.id} className="hover-lift" style={{
+                    background:isEarned?`linear-gradient(135deg,${r.glow},${card})`:`${dark?"#0e0e1a":card2}`,
+                    border:`1px solid ${isEarned?r.color+"50":border}`,
+                    borderRadius:16,padding:14,textAlign:"center",
+                    opacity:isEarned?1:0.5,
+                    boxShadow:isEarned?`0 4px 20px ${r.glow}`:"none",
+                    transition:"all 0.3s",
+                  }}>
+                    <div style={{fontSize:34,marginBottom:6,filter:isEarned?"drop-shadow(0 0 8px "+r.color+")":`grayscale(1)`}}>{a.emoji}</div>
+                    <div style={{fontSize:12,fontWeight:800,marginBottom:4}}>{a.title}</div>
+                    <div style={{fontSize:10,color:sub,marginBottom:6,lineHeight:1.4}}>{a.desc}</div>
+                    <RarityBadge rarity={a.rarity} size={9}/>
+                    {isEarned && <div style={{fontSize:10,color:"#4ade80",fontWeight:700,marginTop:6}}>+{a.xp} XP ✓</div>}
+                    {!isEarned && <div style={{fontSize:10,color:sub,marginTop:6}}>+{a.xp} XP عند التحقيق</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ════════ SOCIAL ════════ */}
+        {view==="social" && (
+          <div className="fade-up">
+            <div style={{textAlign:"center",padding:"16px 0 12px"}}>
+              <div style={{fontSize:28}}>👥</div>
+              <div style={{fontSize:18,fontWeight:900}}>الأصدقاء والتحديات</div>
+            </div>
+
+            {/* Leaderboard */}
+            <div style={{background:`linear-gradient(135deg,#facc1515,#f9731515)`,border:"1px solid #facc1530",borderRadius:18,padding:16,marginBottom:18}}>
+              <div style={{fontSize:14,fontWeight:800,color:"#facc15",marginBottom:12}}>🏆 ترتيب الأسبوع</div>
+              {leaderboard.map((u,i)=>(
+                <div key={u.name} style={{
+                  display:"flex",alignItems:"center",gap:10,
+                  padding:"9px 10px",borderRadius:12,marginBottom:6,
+                  background:u.isMe?`linear-gradient(135deg,${accent}20,#c084fc20)`:(dark?"#ffffff08":"#00000006"),
+                  border:u.isMe?`1px solid ${accent}44`:"1px solid transparent",
+                }}>
+                  <div style={{fontSize:16,fontWeight:900,color:i===0?"#facc15":i===1?"#94a3b8":i===2?"#f97316":sub,width:22,textAlign:"center"}}>
+                    {i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${u.rank}`}
+                  </div>
+                  <div style={{fontSize:24}}>{u.avatar}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{u.name}{u.isMe&&" (أنت)"}</div>
+                    <div style={{fontSize:10,color:sub}}>{u.weeklyXp} XP هذا الأسبوع</div>
+                  </div>
+                  {i===0 && <div style={{fontSize:18}}>👑</div>}
+                </div>
+              ))}
+            </div>
+
+            {/* Active challenges */}
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:14,fontWeight:800,color:"#f87171",marginBottom:12}}>⚔️ التحديات النشطة</div>
+              {MOCK_CHALLENGES.map(c=>(
+                <div key={c.id} className="hover-lift" style={{
+                  background:card,border:`1px solid ${border}`,borderRadius:16,
+                  padding:14,marginBottom:10,cursor:"pointer",
+                }} onClick={()=>setExpandedChallenge(expandedChallenge===c.id?null:c.id)}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                    <div style={{fontSize:28}}>{c.emoji}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:700}}>{c.title}</div>
+                      <div style={{fontSize:11,color:sub,marginTop:2}}>{c.desc}</div>
+                      <div style={{fontSize:10,color:sub,marginTop:3}}>ينتهي: {c.endDate} · 🎁 {c.reward} 🪙</div>
+                    </div>
+                    <div style={{fontSize:12,color:accent}}>{expandedChallenge===c.id?"▲":"▼"}</div>
+                  </div>
+                  {expandedChallenge===c.id && (
+                    <div className="fade-up" style={{marginTop:12}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:sub,marginBottom:4}}>
+                        <span>أنت: {c.myProgress}</span><span>الأفضل: {c.topProgress}</span>
+                      </div>
+                      <div style={{marginBottom:6}}><ProgressBar value={c.myProgress} max={c.topProgress} color={accent} h={6}/></div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                        {c.participants.map(p=>(
+                          <span key={p} style={{fontSize:10,padding:"3px 8px",borderRadius:20,
+                            background:p==="أنت"?accent+"33":card2,
+                            border:`1px solid ${p==="أنت"?accent:border}`,color:p==="أنت"?accent:sub}}>{p}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Friends list */}
+            <div>
+              <div style={{fontSize:14,fontWeight:800,color:sub,marginBottom:12}}>👤 أصدقاؤك</div>
+              {MOCK_FRIENDS.map(f=>(
+                <div key={f.id} className="hover-lift" style={{
+                  background:card,border:`1px solid ${border}`,borderRadius:14,
+                  padding:"11px 14px",marginBottom:9,
+                  display:"flex",alignItems:"center",gap:11,
+                }}>
+                  <div style={{position:"relative"}}>
+                    <div style={{fontSize:30}}>{f.avatar}</div>
+                    <div style={{position:"absolute",bottom:0,right:0,width:10,height:10,
+                      borderRadius:"50%",background:f.online?"#4ade80":"#666688",
+                      border:`2px solid ${card}`}}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{f.name}</div>
+                    <div style={{fontSize:10,color:sub,display:"flex",gap:8,marginTop:2}}>
+                      <span>المستوى {f.level}</span>
+                      <span>🔥 {f.streak}</span>
+                      <span>هذا الأسبوع: {f.weeklyTasks} مهمة</span>
+                    </div>
+                  </div>
+                  <button style={{padding:"5px 10px",borderRadius:8,cursor:"pointer",
+                    background:"transparent",border:`1px solid ${border}`,
+                    color:sub,fontSize:11,fontWeight:700}}>تحدّي ⚔️</button>
+                </div>
+              ))}
+              <button style={{
+                width:"100%",padding:"11px",borderRadius:14,cursor:"pointer",
+                background:dark?"#1a1a2e":"#dde4ff",border:`2px dashed ${border}`,
+                color:sub,fontSize:13,fontWeight:700,
+              }}>+ دعوة صديق 📨</button>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ PROFILE ════════ */}
+        {view==="profile" && (
+          <div className="fade-up">
+            {/* Avatar hero */}
+            <div style={{
+              background:`linear-gradient(160deg,${li.color}20,${li.color}08)`,
+              border:`1px solid ${li.color}40`,borderRadius:20,padding:24,
+              textAlign:"center",marginTop:14,marginBottom:16,
+            }}>
+              <div style={{fontSize:80,marginBottom:8,filter:`drop-shadow(0 0 24px ${li.color})`}}>{li.avatar}</div>
+              <div style={{fontSize:22,fontWeight:900}}>{li.title}</div>
+              <div style={{fontSize:13,color:sub}}>المستوى {li.level}</div>
+              <div style={{marginTop:14}}>
+                <div style={{fontSize:11,color:sub,marginBottom:5}}>التقدم نحو المستوى {li.level+1}</div>
+                <ProgressBar value={li.progress} max={100} color={li.color} h={10}/>
+                <div style={{fontSize:11,color:li.color,fontWeight:700,marginTop:5}}>
+                  {li.xpLeft>0?`${li.xpLeft} XP متبقية`:"وصلت للحد الأقصى!"}
+                </div>
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18}}>
+              {[
+                {l:"إجمالي XP",v:s.xp,i:"⭐",c:"#818cf8"},
+                {l:"العملات",v:s.coins,i:"🪙",c:"#facc15"},
+                {l:"أفضل سلسلة",v:`${s.streak}🔥`,i:"🏆",c:"#f97316"},
+                {l:"المنجزة",v:s.totalCompleted,i:"✅",c:"#4ade80"},
+                {l:"صعبة",v:s.hardCompleted,i:"💪",c:"#f87171"},
+                {l:"مكافآت",v:s.purchases.length,i:"🎁",c:"#38bdf8"},
+              ].map(x=>(
+                <div key={x.l} style={{background:card,border:`1px solid ${border}`,borderRadius:14,padding:14,textAlign:"center"}}>
+                  <div style={{fontSize:26}}>{x.i}</div>
+                  <div style={{fontSize:20,fontWeight:900,color:x.c}}>{x.v}</div>
+                  <div style={{fontSize:11,color:sub,marginTop:2}}>{x.l}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Recent achievements */}
+            <div style={{fontSize:14,fontWeight:800,marginBottom:10}}>🏅 آخر الإنجازات</div>
+            {earned.length===0 && <div style={{textAlign:"center",color:sub,padding:"20px",fontSize:12}}>أنجز مهاماً للحصول على الإنجازات!</div>}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:18}}>
+              {earned.slice(0,6).map(a=>{
+                const r = RARITY[a.rarity];
+                return (
+                  <div key={a.id} style={{
+                    background:`linear-gradient(135deg,${r.glow},${card})`,
+                    border:`1px solid ${r.color}50`,borderRadius:12,padding:"8px 10px",
+                    textAlign:"center",minWidth:70,
+                    boxShadow:`0 2px 12px ${r.glow}`,
+                  }}>
+                    <div style={{fontSize:24}}>{a.emoji}</div>
+                    <div style={{fontSize:9,color:r.color,fontWeight:700,marginTop:3}}>{a.title}</div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Level roadmap */}
+            <div style={{fontSize:14,fontWeight:800,marginBottom:10}}>🗺️ خارطة المستويات</div>
+            {LEVELS.map((l,i)=>{
+              const reached = s.xp >= l.min;
+              return (
+                <div key={i} style={{
+                  display:"flex",alignItems:"center",gap:12,padding:"10px 14px",
+                  background:reached?(dark?"#1a2a1a":"#f0fff4"):card,
+                  border:`1px solid ${reached?"#4ade8044":border}`,
+                  borderRadius:12,marginBottom:8,opacity:reached?1:0.45,
+                  transition:"all 0.3s",
+                }}>
+                  <div style={{fontSize:28}}>{l.avatar}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700}}>{l.title}</div>
+                    <div style={{fontSize:10,color:sub}}>{l.min} XP مطلوبة</div>
+                  </div>
+                  <div style={{textAlign:"left"}}>
+                    {reached?<span style={{color:"#4ade80",fontWeight:700,fontSize:16}}>✓</span>
+                    :<span style={{color:sub,fontSize:10}}>{l.min-s.xp} XP</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+      </div>
+
+      {/* ────── BOTTOM NAV ────── */}
+      <div style={{
+        position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",
+        width:"100%",maxWidth:480,
+        background:dark?"rgba(8,8,18,0.97)":"rgba(240,244,255,0.97)",
+        backdropFilter:"blur(24px)",
+        borderTop:`1px solid ${border}`,
+        padding:"8px 6px 12px",
+        display:"flex",justifyContent:"space-around",zIndex:100,
+      }}>
+        {[
+          {id:"tasks",      label:"المهام",       icon:"⚔️"},
+          {id:"missions",   label:"المهام",       icon:"✨"},
+          {id:"shop",       label:"المتجر",       icon:"🏪"},
+          {id:"achievements",label:"إنجازات",    icon:"🏅"},
+          {id:"social",     label:"الأصدقاء",    icon:"👥"},
+          {id:"profile",    label:"ملفي",         icon:"👤"},
+        ].map(nav=>{
+          const isActive = view===nav.id;
+          return (
+            <button key={nav.id} onClick={()=>setView(nav.id)} style={{
+              flex:1,background:"none",border:"none",cursor:"pointer",
+              display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+              padding:"5px 2px",borderRadius:10,
+              background:isActive?(dark?"#818cf822":"#c7d2fe55"):"transparent",
+              transition:"all 0.2s",
+            }}>
+              <span style={{fontSize:19,filter:isActive?`drop-shadow(0 0 6px ${accent})`:"none",
+                transition:"filter 0.2s"}}>{nav.icon}</span>
+              <span style={{fontSize:9,fontWeight:700,color:isActive?accent:sub,transition:"color 0.2s"}}>{nav.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
